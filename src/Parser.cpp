@@ -3,6 +3,8 @@
 //
 
 #include "include/Parser.h"
+#include "include/TypeChecker.h"
+#include "include/ClassInfo.h"
 #include "include/Utils.h"
 #include <fstream>
 #include <algorithm>
@@ -10,11 +12,6 @@
 
 namespace serializer {
     namespace {
-        // Verifica se a linha contém "TRANSIENT"
-        bool containsTransient(const std::string& line) {
-            return line.find("TRANSIENT") != std::string::npos;
-        }
-
         // Extrai tipo e nome de uma declaração de campo
         // Ex: "int id;" -> tipo="int", nome="id"
         // Ex: "std::vector<double> valores;" -> tipo="std::vector<double>", nome="valores"
@@ -72,6 +69,49 @@ namespace serializer {
 
             return std::make_pair(type, name);
         }
+    }
+
+    bool Parser::containsSerializableMacro(const std::filesystem::path& filePath) const {
+        std::ifstream file(filePath);
+        if (!file.is_open()) {
+            return false;
+        }
+
+        std::string line;
+        while (std::getline(file, line)) {
+            // Remove comentários
+            std::string cleanLine = Utils::removeComments(line);
+
+            // Verifica se contém SERIALIZABLE
+            if (cleanLine.find("SERIALIZABLE") != std::string::npos) {
+                file.close();
+                return true;
+            }
+        }
+
+        file.close();
+        return false;
+    }
+
+    bool Parser::containsTransient(const std::string& line) const {
+        // Verifica se a linha contém "TRANSIENT"
+        // Ignora comentários
+        std::string cleanLine = line;
+
+        // Remove comentários de linha
+        size_t commentPos = cleanLine.find("//");
+        if (commentPos != std::string::npos) {
+            cleanLine = cleanLine.substr(0, commentPos);
+        }
+
+        // Remove comentários de bloco (simplificado)
+        commentPos = cleanLine.find("/*");
+        if (commentPos != std::string::npos) {
+            cleanLine = cleanLine.substr(0, commentPos);
+        }
+
+        // Verifica se contém TRANSIENT
+        return cleanLine.find("TRANSIENT") != std::string::npos;
     }
 
     std::optional<ClassInfo> Parser::parseClass(const std::filesystem::path& filePath) const {
@@ -193,4 +233,35 @@ namespace serializer {
 
         return AccessSpecifier::None;
     }
+}
+
+std::optional<serializer::ClassInfo> serializer::Parser::parseClassWithDependencies(
+    const std::filesystem::path& filePath,
+    serializer::TypeChecker& typeChecker
+) const {
+    auto classInfo = parseClass(filePath);
+    if (!classInfo) return std::nullopt;
+
+    // Analisa tipos dos campos
+    for (const auto& field : classInfo->fields) {
+        auto analysis = typeChecker.analyzeType(field.type);
+
+        // Se campo é classe serializável, precisamos gerar serialização dela também
+        if (analysis.category == TypeChecker::TypeCategory::Serializable) {
+            // Marca que essa classe depende de outra
+            classInfo->dependencies.insert(analysis.baseType);
+        }
+
+        // Se campo é container de classes serializáveis
+        if (analysis.category == TypeChecker::TypeCategory::Container) {
+            for (const auto& templateArg : analysis.templateArgs) {
+                auto argAnalysis = typeChecker.analyzeType(templateArg);
+                if (argAnalysis.category == TypeChecker::TypeCategory::Serializable) {
+                    classInfo->dependencies.insert(argAnalysis.baseType);
+                }
+            }
+        }
+    }
+
+    return classInfo;
 }

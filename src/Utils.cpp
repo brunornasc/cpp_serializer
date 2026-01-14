@@ -20,4 +20,42 @@ namespace serializer {
         }
         return trim(line);
     }
+
+    std::pair<std::string, std::vector<std::string>> Utils::extractTemplateInfo(const std::string& typeName) {
+        std::string baseType = typeName;
+        std::vector<std::string> templateArgs;
+
+        size_t templateStart = typeName.find('<');
+        if (templateStart != std::string::npos && typeName.back() == '>') {
+            baseType = typeName.substr(0, templateStart);
+
+            std::string argsStr = typeName.substr(templateStart + 1,
+                                                 typeName.length() - templateStart - 2);
+
+            // Parsing simples de template args
+            int bracketCount = 0;
+            std::string currentArg;
+
+            for (char c : argsStr) {
+                if (c == '<') {
+                    bracketCount++;
+                    currentArg += c;
+                } else if (c == '>') {
+                    bracketCount--;
+                    currentArg += c;
+                } else if (c == ',' && bracketCount == 0) {
+                    templateArgs.push_back(trim(currentArg));
+                    currentArg.clear();
+                } else {
+                    currentArg += c;
+                }
+            }
+
+            if (!currentArg.empty()) {
+                templateArgs.push_back(trim(currentArg));
+            }
+        }
+
+        return {baseType, templateArgs};
+    }
 }

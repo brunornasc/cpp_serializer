@@ -13,4 +13,6 @@ add_executable(cpp_serializer src/main.cpp
         src/include/Parser.h
         src/include/TypeChecker.h
         src/include/Utils.h
-        src/Utils.cpp)
+        src/Utils.cpp
+        src/include/ClassInfo.h
+        examples/ClassB.h)
